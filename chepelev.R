@@ -14,7 +14,7 @@ options(stringAsFactors=FALSE)
 thresh<-5
 
 source(file.path(CD4CHIC.ROOT,"activation-analyses/R/common.R"))
-prom.ass<-fread('/home/oliver/captureHIC_support/RESOURCES/HindIII_baits_e75.bed')
+prom.ass<-fread('HindIII_baits_e75.bed')
 setnames(prom.ass,c('chr','start','end','frag.id','gene_details'))
 
 chepfile <- "http://www.nature.com/cr/journal/v22/n3/extref/cr201215x1.xlsx"
@@ -37,12 +37,14 @@ chepr1<-with(chep,GRanges(seqnames=Rle(R1.chrom),ranges=IRanges(start=R1.start,e
 chepr2<-with(chep,GRanges(seqnames=Rle(R2.chrom),ranges=IRanges(start=R2.start,end=R2.end),id=line))
 
 ## lift these over to build 37
-
-chain.file.path<-'/home/oliver/bin/liftOverchainfiles/hg18ToHg19.over.chain'
-
-c<-import.chain(chain.file.path) 
+f <- "http://hgdownload.cse.ucsc.edu/goldenPath/hg18/liftOver/hg18ToHg19.over.chain.gz"
+system(paste("wget",f))
+system(paste("gunzip",basename(f)))
+f <- sub(".gz","",f)
+c<-basename(f) %>% import.chain() 
 chepr1.37<-unlist(liftOver(chepr1,c))  
 chepr2.37<-unlist(liftOver(chepr2,c))
+basename(f) %>% unlink()
 
 chep.37<-GRangesList(r1=chepr1.37,r2=chepr2.37)
 seqlevels(chep.37)<-sub("^chr","",seqlevels(chep.37))
@@ -52,7 +54,7 @@ seqlevels(chep.37)<-sub("^chr","",seqlevels(chep.37))
 
 ## how do hindIII fragments map to these fragments ?
 
-h3.file<-'/home/oliver/captureHIC_support/RESOURCES/Digest_Human_HindIII.bed'
+h3.file<-'Digest_Human_HindIII.bed'
 h3<-fread(h3.file,header=FALSE)
 setnames(h3,c('chr','start','end','id'))
 ## get rid of y chromosome
@@ -90,14 +92,7 @@ m.chep$ruid<-with(m.chep,paste(r2_frag.id,r1_frag.id,sep=":"))
 
 
 ## load in jav data
-
-header<-c('ensg','name','biotype','strand','baitChr','baitStart','baitEnd','baitID','baitName','oeChr','oeStart','oeEnd','oeID','oeName','dist','Monocytes','Macrophages_M0','Macrophages_M1','Macrophages_M2','Neutrophils','Megakaryocytes','Endothelial_precursors','Erythroblasts','Foetal_thymus','Naive_CD4','Total_CD4_MF','Total_CD4_Activated','Total_CD4_NonActivated','Naive_CD8','Total_CD8','Naive_B','Total_B')
-
-ifile<-'/home/oliver/captureHIC_support/RESOURCES/merged_samples_12Apr2015_full_denorm_bait2baits_e75.tab'
-
-int<-fread(ifile,header=FALSE)
-setnames(int,header)
-
+int <- get.interactions()
 int$uid<-with(int,paste(baitID,oeID,sep=":"))
 int$ruid<-with(int,paste(oeID,baitID,sep=":"))
 
@@ -241,8 +236,8 @@ scale_y_continuous(breaks=c(0,5000,1e+4),labels=c("0","5,000","10,000"))
 p1 <- ggplot(dfn[study=="Javierre",],aes(x=cdist,y=N)) + geom_bar(stat="identity",fill="black") + labs(x="Interaction distance",y="Count")+ scale_x_discrete(labels=xlabs)  + scale_y_continuous(breaks=c(0,2e+5,4e+5,6e+5),labels=c("0","200,000","400,000","600,000"))
 
 plot_grid(p1,p2,p3,nrow=3,labels=c("a","b","c"),align="v")
-ggsave(file.path(CD4CHIC.OUT,"paper/chepelev-comp.pdf"),height=8,width=6)
-ggsave(file.path(CD4CHIC.OUT,"paper/chepelev-comp.tiff"),height=8,width=6)
+ggsave(file.path(CD4CHIC.OUT,"paper/chepelev-comp.pdf"),height=10,width=10)
+ggsave(file.path(CD4CHIC.OUT,"paper/chepelev-comp.tiff"),height=10,width=10)
 
 
 
