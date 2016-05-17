@@ -243,7 +243,9 @@ scale_fill_brewer("Javierre cell",palette="Set2",labels=c("CD4 (a)", "CD4 (n)", 
 scale_x_discrete(labels=xlabs) +
 scale_y_continuous(breaks=c(0,5000,1e+4),labels=c("0","5,000","10,000"))
 
-p1 <- ggplot(dfn[study=="Javierre",],aes(x=cdist,y=N)) + geom_bar(stat="identity",fill="black") + labs(x="Interaction distance",y="Count")+ scale_x_discrete(labels=xlabs)  + scale_y_continuous(breaks=c(0,2e+5,4e+5,6e+5),labels=c("0","200,000","400,000","600,000"))
+p1 <- ggplot(dfn[study=="Javierre",],aes(x=cdist,y=N)) + geom_bar(stat="identity",fill="black") + labs(x="Interaction distance",y="Count")+
+scale_x_discrete(labels=xlabs) +
+scale_y_continuous(breaks=c(0,5e+4,1e+5,1.5e+5),labels=c("0","50,000","100,000","150,000"))
 
 plot_grid(p1,p2,p3,nrow=3,labels=c("a","b","c"),align="v")
 
