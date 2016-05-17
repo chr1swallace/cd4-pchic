@@ -12,6 +12,7 @@ options(stringAsFactors=FALSE)
 
 ## alter this and alter chicago thresh to use
 thresh<-5
+setwd(CD4CHIC.EXTDATA)
 
 source(file.path(CD4CHIC.ROOT,"activation-analyses/R/common.R"))
 prom.ass<-fread('HindIII_baits_e75.bed')
@@ -90,9 +91,24 @@ m.chep<-merge(m[[1]],m[[2]],by.x="r1_line",by.y="r2_line",allow.cartesian=TRUE)
 m.chep$uid<-with(m.chep,paste(r1_frag.id,r2_frag.id,sep=":"))
 m.chep$ruid<-with(m.chep,paste(r2_frag.id,r1_frag.id,sep=":"))
 
-
 ## load in jav data
-int <- get.interactions()
+    require(data.table)#merged_samples_12Apr2015_full_denorm_bait2baits_e75.tab
+##    int <- fread(file.path(CD4CHIC.DATA,"merged_samples_12Apr2015_full_denorm_bait2baits_e75.tab")) # %>% as.data.frame()
+    int <- fread(file.path(CD4CHIC.DATA,"merged_samples_12Apr2015_full.txt"))
+    int.genes <- get.b2gene()
+    setkey(int,baitID)
+    setkey(int.genes,baitID)
+    int <- merge(int,int.genes[,.(id,gene,biotype,strand,baitID)],allow.cartesian=TRUE)
+    ## ## subset to protein coding only
+    ## int <- int[biotype=="protein_coding",]
+    ## int[ oeID==120852 & baitID==120843, .(baitChr,baitStart,baitID,oeChr,oeStart,oeID,id,gene,Total_CD4_Activated,Total_CD4_NonActivated)]
+    int <- int[,b2b:= oeID %in% int$baitID]
+    int[,Background:=apply(int[,.(Erythroblasts,Megakaryocytes)],1,max)]
+threshold <- 5
+        int <- int[pmax(Background,Total_CD4_Activated,Total_CD4_NonActivated)>=threshold, ]
+    int <- int[, c("baitChr","oeChr") := list(paste0("chr",baitChr), paste0("chr",oeChr)) ]
+    int <- int[, c("baitLength","oeLength"):= list(abs(baitStart-baitEnd), abs(oeStart-oeEnd)) ]
+    int <- int[,.(baitChr,baitStart,baitID,oeChr,oeStart,oeID,id,gene,Total_CD4_Activated,Total_CD4_NonActivated,Erythroblasts,Megakaryocytes,biotype,baitLength,oeLength,b2b)]
 int$uid<-with(int,paste(baitID,oeID,sep=":"))
 int$ruid<-with(int,paste(oeID,baitID,sep=":"))
 
@@ -139,15 +155,9 @@ compare_chep<-function(chep,pm,comp.pm,name1="all.chep",name2,strat.label="NONE"
 	data.frame(n1=name1,n2=name2,overlap=perc,stratification=strat.label)
 }
 
-chep_vs_jav_raw<-do.call("rbind",lapply(seq_along(comp.jav),function(j){
-		message(paste("Comparing all.chep with",names(comp.jav)[j]))
-		compare_chep(m.chep,int,comp.jav[[j]],'all.chep',names(comp.jav)[j])
-	}))
-	
 ## we have no chance to find e2e
-
 m.chep[,e2e:=is.na(r1_gene_details) & is.na(r2_gene_details)]
-## also flag promoter to promoter
+## also flag promoter to promoter?
 m.chep[,p2p:=!is.na(r1_gene_details) & !is.na(r2_gene_details)]
 
 options(mc.cores=length(comp.jav))
@@ -160,7 +170,7 @@ chep_vs_jav <- do.call("rbind",mclapply(seq_along(comp.jav),function(j){
 
 s<-c(1e3,1e4,5e4,1e5,5e5,1e6,5e6,1e7,1e8,1e9)
 
-int$dist<-with(int,ceiling(abs((((baitEnd-baitStart)/2) + baitStart) - (((oeEnd-oeStart)/2) + oeStart))))
+int[, dist:= abs( (baitStart + baitLength/2) - (oeStart + oeLength/2) )]
 int.strat<-split(1:nrow(int),cut(int$dist,s))
 m.chep$dist<-with(m.chep,ceiling(abs((((r1_end-r1_start)/2) + r1_start) - (((r2_end-r2_start)/2) + r2_start))))
 ## for this analysis remove e2e
@@ -168,7 +178,7 @@ chep.f<-subset(m.chep,!e2e)
 
 chep.strat<-split(1:nrow(chep.f),cut(chep.f$dist,s))
 
-chep_vs_jav_strat<-do.call("rbind",lapply(seq_along(chep.strat),function(z){
+chep_vs_jav_strat<-do.call("rbind",mclapply(seq_along(chep.strat),function(z){
 	intz<-int[int.strat[[z]],]
 	chepz<-chep.f[chep.strat[[z]],]
 	slabel<-names(chep.strat)[z]
@@ -236,9 +246,10 @@ scale_y_continuous(breaks=c(0,5000,1e+4),labels=c("0","5,000","10,000"))
 p1 <- ggplot(dfn[study=="Javierre",],aes(x=cdist,y=N)) + geom_bar(stat="identity",fill="black") + labs(x="Interaction distance",y="Count")+ scale_x_discrete(labels=xlabs)  + scale_y_continuous(breaks=c(0,2e+5,4e+5,6e+5),labels=c("0","200,000","400,000","600,000"))
 
 plot_grid(p1,p2,p3,nrow=3,labels=c("a","b","c"),align="v")
-ggsave(file.path(CD4CHIC.OUT,"paper/chepelev-comp.pdf"),height=10,width=10)
-ggsave(file.path(CD4CHIC.OUT,"paper/chepelev-comp.tiff"),height=10,width=10)
 
+f <- file.path(CD4CHIC.OUT,"paper/chepelev-comp.pdf")
+ggsave(f,height=10,width=10)
+system(paste("display",f))
 
 
 
