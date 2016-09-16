@@ -90,16 +90,12 @@ R <- unique(x[stim!="genomic",.(snp,stim,time)])
 R$p <- as.numeric(NA)
 for(i in 1:nrow(R)) {
     tmp0 <- ux[ux$stim=="genomic" & ux$snp==R$snp[i],]
-    ctl <- with(tmp0, logratio)
     tmp <- ux[ux$stim==R$stim[i] & ux$snp==R$snp[i] & ux$time==R$time[i],]
-    test <- with(tmp, logratio)
-    tt <- wilcox.test(ctl,test)
+    tt <- wilcox.test(tmp0$mean.logratio, tmp$mean.logratio)
     R[i,p:=tt$p.value]
 }
 R
     
-## only Total CD4
-ux <- ux[cell=="Total CD4+" | stim=="genomic",]
 ux[,mean.logprop.global:=mean(mean.logprop), by=c("time","stim","snp")]
 ux[,mean.logratio.global:=mean(mean.logratio), by=c("time","stim","snp")]
 ux <- merge(ux, R,by=c("stim","time","snp"),all=TRUE)
