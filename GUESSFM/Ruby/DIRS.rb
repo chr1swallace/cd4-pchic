@@ -1,0 +1,6 @@
+ROOT="."
+IMPUTEDIR="./FM-impute"
+GUESSDIR="./FM-GUESS"
+SINGLESNPDIR="./FM-ss"
+OUTPUTDIR="./FM/output"
+

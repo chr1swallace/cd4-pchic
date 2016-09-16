@@ -1,8 +1,4 @@
 ## cheplev/martin and javierre overlap
-
-## load in cheplev data and see what it's all about
-## the data comes from supp table 1
-
 library(data.table)
 library(GenomicRanges)
 library(rtracklayer)
@@ -10,17 +6,20 @@ library(reshape2)
 library(magrittr)
 options(stringAsFactors=FALSE)
 
-## alter this and alter chicago thresh to use
-thresh<-5
-setwd(CD4CHIC.EXTDATA)
+## will need a liftover
+f <- "http://hgdownload.cse.ucsc.edu/goldenPath/hg18/liftOver/hg18ToHg19.over.chain.gz"
+system(paste("wget",f))
+system(paste("gunzip",basename(f)))
+f <- sub(".gz","",f)
+liftover.chain<-basename(f) %>% import.chain() 
+basename(f) %>% unlink()
 
-source(file.path(CD4CHIC.ROOT,"activation-analyses/R/common.R"))
-prom.ass<-fread('HindIII_baits_e75.bed')
-setnames(prom.ass,c('chr','start','end','frag.id','gene_details'))
+## load in cheplev data and see what it's all about
+## the data comes from supp table 1
 
+library(readxl)
 chepfile <- "http://www.nature.com/cr/journal/v22/n3/extref/cr201215x1.xlsx"
 system(paste("wget",chepfile))
-library(readxl)
 chep <- basename(chepfile) %>%
 read_excel(.,skip=1) %>% as.data.frame() %>% as.data.table()
 chep$line<-1:nrow(chep)
@@ -38,20 +37,17 @@ chepr1<-with(chep,GRanges(seqnames=Rle(R1.chrom),ranges=IRanges(start=R1.start,e
 chepr2<-with(chep,GRanges(seqnames=Rle(R2.chrom),ranges=IRanges(start=R2.start,end=R2.end),id=line))
 
 ## lift these over to build 37
-f <- "http://hgdownload.cse.ucsc.edu/goldenPath/hg18/liftOver/hg18ToHg19.over.chain.gz"
-system(paste("wget",f))
-system(paste("gunzip",basename(f)))
-f <- sub(".gz","",f)
-c<-basename(f) %>% import.chain() 
-chepr1.37<-unlist(liftOver(chepr1,c))  
-chepr2.37<-unlist(liftOver(chepr2,c))
-basename(f) %>% unlink()
+chepr1.37<-unlist(liftOver(chepr1,liftover.chain))  
+chepr2.37<-unlist(liftOver(chepr2,liftover.chain))
 
 chep.37<-GRangesList(r1=chepr1.37,r2=chepr2.37)
 seqlevels(chep.37)<-sub("^chr","",seqlevels(chep.37))
 
+## load in PCHIC data
 
-## mean frag size of 3.7kb
+setwd(CD4CHIC.EXTDATA)
+prom.ass<-fread('HindIII_baits_e75.bed')
+setnames(prom.ass,c('chr','start','end','frag.id','gene_details'))
 
 ## how do hindIII fragments map to these fragments ?
 
@@ -92,40 +88,16 @@ m.chep$uid<-with(m.chep,paste(r1_frag.id,r2_frag.id,sep=":"))
 m.chep$ruid<-with(m.chep,paste(r2_frag.id,r1_frag.id,sep=":"))
 
 ## load in jav data
-    require(data.table)#merged_samples_12Apr2015_full_denorm_bait2baits_e75.tab
-##    int <- fread(file.path(CD4CHIC.DATA,"merged_samples_12Apr2015_full_denorm_bait2baits_e75.tab")) # %>% as.data.frame()
-    int <- fread(file.path(CD4CHIC.DATA,"merged_samples_12Apr2015_full.txt"))
-    int.genes <- get.b2gene()
-    setkey(int,baitID)
-    setkey(int.genes,baitID)
-    int <- merge(int,int.genes[,.(id,gene,biotype,strand,baitID)],allow.cartesian=TRUE)
+    int <- fread("interactions.csv")
     ## ## subset to protein coding only
     ## int <- int[biotype=="protein_coding",]
-    ## int[ oeID==120852 & baitID==120843, .(baitChr,baitStart,baitID,oeChr,oeStart,oeID,id,gene,Total_CD4_Activated,Total_CD4_NonActivated)]
-    int <- int[,b2b:= oeID %in% int$baitID]
-    int[,Background:=apply(int[,.(Erythroblasts,Megakaryocytes)],1,max)]
+    int[,Background:=pmax(Erythroblasts,Megakaryocytes)]
 threshold <- 5
-        int <- int[pmax(Background,Total_CD4_Activated,Total_CD4_NonActivated)>=threshold, ]
+int <- int[pmax(Background,Total_CD4_Activated,Total_CD4_NonActivated)>=threshold, ]
     int <- int[, c("baitChr","oeChr") := list(paste0("chr",baitChr), paste0("chr",oeChr)) ]
-    int <- int[, c("baitLength","oeLength"):= list(abs(baitStart-baitEnd), abs(oeStart-oeEnd)) ]
     int <- int[,.(baitChr,baitStart,baitID,oeChr,oeStart,oeID,id,gene,Total_CD4_Activated,Total_CD4_NonActivated,Erythroblasts,Megakaryocytes,biotype,baitLength,oeLength,b2b)]
 int$uid<-with(int,paste(baitID,oeID,sep=":"))
 int$ruid<-with(int,paste(oeID,baitID,sep=":"))
-
-## chromatin data
-## (load("/ipswich/data/chrisw/cd4chic-output/peaks/hind-our-marks.RData"))
-
-## act <- pmax(hind$H3K4me3_PoolQTW_Act_2, hind$H3K4me3_PoolRG_Act_2) 
-## non <- pmax(hind$H3K4me3_PoolQTW_NAct_2, hind$H3K4me3_PoolRG_NAct_2) 
-## median(act,na.rm=TRUE)
-## median(non,na.rm=TRUE)
-## hind$enh.act <- act
-## hind$enh.non <- non
-## hind <- as.data.table(as.data.frame(hind))
-## hind$name <- as.integer(hind$name)
-## setkey(hind,name)
-## setkey(int,oeID)
-## int <- merge(int,hind[,.(name,enh.act,enh.non)],by.x="oeID",by.y="name")
 
 int[,mega.nocd4:=ifelse(pmax(Total_CD4_Activated,Total_CD4_NonActivated)>5, 0, Megakaryocytes)]
 int[,ery.nocd4:=ifelse(pmax(Total_CD4_Activated,Total_CD4_NonActivated)>5, 0, Erythroblasts)]
@@ -143,6 +115,7 @@ comp.jav<-list(
 	
 ############################ COMPARE CHEPELEV TO JAV ########################################################
 
+thresh <- 5
 compare_chep<-function(chep,pm,comp.pm,name1="all.chep",name2,strat.label="NONE"){
 	if(length(comp.pm)>1){
 		t2<-which(rowSums(pm[,comp.pm,with=FALSE]>=thresh)>0)
@@ -191,8 +164,11 @@ chep_vs_jav_strat<-do.call("rbind",mclapply(seq_along(chep.strat),function(z){
 
 pretty.chep_vs_jav_strat<-melt(chep_vs_jav_strat,id=c('n1','n2','stratification'))
 pretty.chep_vs_jav_strat<-recast(pretty.chep_vs_jav_strat,n1+n2~stratification)
-pretty.chep_vs_jav_strat
-
+x <- pretty.chep_vs_jav_strat
+x
+rownames(x) <- x$n2
+w <- which(rownames(x)=="tnact")
+lapply(x[,-c(1:2)], function(xx) xx[w]/xx)
 
 ## plot these
 
@@ -228,7 +204,7 @@ p3 <- ggplot(subset(dff,n1 %in% c("CD4-act","CD4-nonact","ery.nocd4","mega.nocd4
     geom_bar(stat="identity",position="dodge",col="grey") +
 theme(legend.position="bottom") +
 labs(x="Interaction distance",y="Overlap (%)") +
-scale_fill_brewer("Javierre cell",palette="Set2",labels=c("CD4 (a)", "CD4 (n)", "Erythroblasts, not CD4", "Megakaryocytes, not CD4")) +
+scale_fill_brewer("Interaction detected in",palette="Set2",labels=c("CD4 (a)", "CD4 (n)", "Erythroblasts, not CD4", "Megakaryocytes, not CD4")) +
 background_grid() +
 scale_x_discrete(labels=xlabs) +
 scale_y_continuous(breaks=c(0,10,20,30,40,50,60))

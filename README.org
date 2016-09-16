@@ -2,7 +2,9 @@
 
 ** Self contained scripts for figures and small analyses
 
-- IL2RA-panelB.R :: create right hand panels on IL2RA ASE figure given supplementary data items
+- IL2RA-ASE.R :: create right hand panels on IL2RA ASE figure given supplementary data items
+- chepelev.R :: compare PCHi-C CD4 interactions to CHIA-PET interactions from Chepelev et al.
+- make_modules.R :: cluster microarray data to find gene modules
 
 # Local Variables:
 # firestarter: (org-md-export-to-markdown)
