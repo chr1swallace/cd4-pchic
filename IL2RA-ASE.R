@@ -184,4 +184,7 @@ f <- file.path("/scratch/wallace",paste0("figure-ASE-disp-",sub(" .*","",snps[[i
 ggsave(f,width=27,height=8,units="cm")
 system(paste("display",f))
 f
-        
+
+ux[time<0,time:=NA]
+tmp <- ux[,.(N=.N),by=c("time","stim","snp")]
+write.table(tmp,file=file.path(CD4CHIC.EXTDATA,"supp-table-12-ASE-sample-counts.csv"))   
