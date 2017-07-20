@@ -1,7 +1,10 @@
 <a id="orge75f642"></a>
 
-# cd4-pchic
+# Chromosome contacts in activated T cells identify autoimmune disease candidate genes
 
+Scripts to accompany /Burren et al, Chromosome contacts in activated T cells identify autoimmune disease candidate genes, 2017/
+
+Scripts are authored by Chris Wallace, Oliver Burren and Arcadio Rubio Garcia.
 
 <a id="org3298386"></a>
 
