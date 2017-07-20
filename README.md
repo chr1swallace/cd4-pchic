@@ -4,7 +4,7 @@
 
 Scripts to accompany *Burren et al, Chromosome contacts in activated T cells identify autoimmune disease candidate genes, 2017*
 
-Scripts are authored by Chris Wallace, Oliver Burren and Arcadio Rubio Garcia.
+Scripts are authored by Chris Wallace, Oliver Burren and Arcadio Rubio Garcia, and are roughly organised in directories according to the aspect of analysis they tackle as described below.
 
 <a id="org3298386"></a>
 
