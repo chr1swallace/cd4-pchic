@@ -2,7 +2,7 @@
 
 # Chromosome contacts in activated T cells identify autoimmune disease candidate genes
 
-Scripts to accompany /Burren et al, Chromosome contacts in activated T cells identify autoimmune disease candidate genes, 2017/
+Scripts to accompany *Burren et al, Chromosome contacts in activated T cells identify autoimmune disease candidate genes, 2017*
 
 Scripts are authored by Chris Wallace, Oliver Burren and Arcadio Rubio Garcia.
 
