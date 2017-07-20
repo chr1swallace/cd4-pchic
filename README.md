@@ -1,22 +1,3 @@
-<div id="table-of-contents">
-<h2>Table of Contents</h2>
-<div id="text-table-of-contents">
-<ul>
-<li><a href="#orge75f642">1. cd4-pchic</a>
-<ul>
-<li><a href="#org3298386">1.1. GUESSFM</a></li>
-<li><a href="#org236b794">1.2. ASE</a></li>
-<li><a href="#org4d4e42a">1.3. activation-analyses</a></li>
-<li><a href="#orgf783800">1.4. analyses</a></li>
-<li><a href="#orge47db28">1.5. seq</a></li>
-<li><a href="#org0d330f9">1.6. gene<sub>prioritisation</sub></a></li>
-</ul>
-</li>
-<li><a href="#org56eb3b0">2. License</a></li>
-</ul>
-</div>
-</div>
-
 <a id="orge75f642"></a>
 
 # cd4-pchic
