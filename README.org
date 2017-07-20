@@ -6,12 +6,17 @@ Directory with own documentation, giving pipeline for GUESSFM fine mapping of au
 R scripts relating to ASE analysis
 - IL2RA-ASE.R :: create right hand panels on IL2RA ASE figure given supplementary data items
 - IL2RA-ASE+centralmem.R :: adding central memory results
+** activation-analyses
+ analyses comparing CD4 activated and non-activated cells.  Has its own docs.
+
+
 ** analyses
 Other self contained scripts for figures and small analyses
 
 - chepelev-comparison.R :: compare PCHi-C CD4 interactions to CHIA-PET interactions from Chepelev et al.
 - make_modules.R :: cluster microarray data to find gene modules
-
+** seq
+scripts for processing raw sequence data
 # Local Variables:
 # firestarter: (org-md-export-to-markdown)
 # End:
