@@ -21,8 +21,8 @@ scripts for processing raw sequence data
 R and perl scripts relating to gene prioritisation.
 
 - merge_all_summary_frag_level_results.R :: merge and format gene prioritisation results from GUESSFM and GWAS prioritisation pipelines for Additional files 7,8,9 and 10. 
-GWAS - Pipeline for GWAS integration see also https://www.ncbi.nlm.nih.gov/pubmed/27863249
-GUESSFM - Pipeline for ImmunoChip GUESS Fine Mapping integration.
+- GWAS :: Pipeline for GWAS integration and annotation see also https://www.ncbi.nlm.nih.gov/pubmed/27863249 for further details.
+- GUESSFM :: Pipeline for ImmunoChip GUESS Fine Mapping integration and annotation.
 # Local Variables:
 # firestarter: (org-md-export-to-markdown)
 # End:
