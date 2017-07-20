@@ -15,3 +15,15 @@ export PATH=$P/star/2.5.1b/bin:$PATH
 ENS=ftp://ftp.ensembl.org/pub/grch37/release-84
 GTF=$ENS/gtf/homo_sapiens/Homo_sapiens.GRCh37.82.chr_patch_hapl_scaff.gtf.gz
 DNA=$ENS/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
+
+export PYTHONPATH=$P/cutadapt/1.8.1/lib/python2.7/site-packages:$PYTHONPATH
+export PYTHONPATH=$P/htseq/0.6.1p1/lib/python2.7/site-packages:$PYTHONPATH
+export R_LIBS=$P/r
+
+SRC=/chiswick/data/store/sequencing/RNA-seq/P140369/140707_SN847_0422_BC4H6RACXX
+GEN=$P/ensembl/75/star
+GTF=$P/ensembl/75/Homo_sapiens.GRCh37.75.gtf
+PICARD=$P/picard/1.130/picard.jar
+
+MIN=201
+MAX=204

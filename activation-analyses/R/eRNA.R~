@@ -1,0 +1,859 @@
+#b# NB run first three stages of activation-analyses first.
+## This script analyses ernas.
+
+quick <- TRUE
+
+## * Common prep
+#source(file.path(CD4CHIC.ROOT, "activation-analyses/R/eRNA-common.R"))
+
+## * basic summary plots
+
+erna <- get.erna()
+urna <- unique(erna,by="id")
+table(expr=urna$expr,type=urna$type,P=!is.na(urna$FDR.erna))
+table(urna$expr,!is.na(urna$FDR.erna))
+
+## ernap <- fread(file.path(CD4CHIC.DATA,"rna-with-regrna-diff-v2.csv"))
+## erna[,AveExpr:=NULL]
+## erna[,t:=NULL]
+## erna[,P.Value:=NULL]
+## erna <- merge(erna,ernap[,.(id,logFC,AveExpr,t,P.Value,adj.P.Val)],by="id",all.x=TRUE)
+## setnames(erna,c("logFC","adj.P.Val"),c("logFC.erna","FDR,erna"))
+## table(erna$type)
+
+if(!quick) {
+##' volcano plots
+ggplot(unique(erna,by="id"),
+       aes(x=logFC.erna,y=-log10(FDR.erna))) + geom_point() + facet_wrap(~type) 
+
+##' distance distributions
+ggplot(unique(erna,by="id"), aes(x=(end-start))) +
+  geom_density() +
+  geom_histogram(aes(y=..density..), binwidth=1000) +
+  facet_grid(type ~ .,scales="free") + xlim(0,50000)
+}
+
+cutter <- function(x,n=4) {
+  q <- quantile(x,seq(0,1,length=n+1),na.rm=TRUE)
+  cut(x,breaks=q,include.lowest=TRUE)
+}
+
+mods <- get.modules()
+
+## get oe frags for each module
+f <- function(mod) {
+    ids <- unique(mods[module==mod,]$id)
+    oes <- ints[pmax(Total_CD4_NonActivated,Total_CD4_Activated)>5 &
+                id %in% ids, ]$oeID %>% unique()
+    e.mod <- erna[name %in% oes,]
+    e.mod$module <- mod
+    return(unique(e.mod,by="id"))
+}
+
+library(parallel)
+data <- mclapply(unique(mods$module), f, mc.cores=8) %>% do.call("rbind",.)
+if(!quick) {
+ggplot(data[type %in% c("regulatory","intergenic.reg"),],
+       aes(x=logFC.erna,y=-log10(FDR.erna),col=module)) +
+geom_point() + facet_grid(type~module) 
+}
+
+## * Add gene, hind annotations
+b2g[,baitID:=as.integer(baitID)]
+
+hind <- get.hind()
+
+h <- as.data.table(as.data.frame(hind))
+h[,mid:=(start+end)/2]
+h[,name:=as.integer(name)]
+h <- h[order(seqnames,start),]
+
+## TODO: take account of overlaps when defining nearest - should be
+## nearest bait with non-overlapping feature
+feat <- copy(erna)
+feat[,c("minfrag","maxfrag"):=list(min(name),max(name)), by="id"]
+feat[,mid:=pmean(start,end)]
+## feat <- unique(feat[,.(id,chr,type,start,end,minfrag,maxfrag)],
+##                 by="id")
+setkey(feat,id)
+overlap <- function(id1,id2) {
+    o.length <- (feat[id1,start] < feat[id2,end]) &  (feat[id1,end] > feat[id1,start])
+    o.frag <- (feat[id1,minfrag] <= feat[id2,maxfrag]) & (feat[id1,maxfrag] >= feat[id1,minfrag])
+    o.length | o.frag
+}
+
+## for each regulatory eRNA, add fold change at + distance to all nearby protein coding genes
+## NB a reg feature can map to multiple hindIII, but a protein coding gene has generally a single bait
+feat.reg <- feat[type %in% c(## "regulatory",
+"intergenic.reg") & expr,]#!is.na(FDR.erna),]
+#feat.reg <- feat[type=="intergenic.reg" & !is.na(FDR.erna),]
+feat.prot <- unique(feat[type=="protein_coding" & expr,],#!is.na(FDR.erna),],
+                    by="id")
+
+nrow(feat.reg)
+nrow(feat.prot)
+feat.reg <- split(feat.reg,feat.reg$chr)
+sapply(feat.reg,nrow)
+feat.prot <- split(feat.prot,feat.prot$chr)
+sapply(feat.prot,nrow)
+
+## * Correlation as a function of distance for different classes
+
+## all pairs of features by chromosome
+DATA <- structure(vector("list",length(feat.reg)), names=names(feat.reg))
+for(v in unique(names(feat.reg))) {
+    myf <- function(i, j, col) 
+        abs(feat.reg[[v]][i][[col]] - feat.prot[[v]][j][[col]])
+    O <- outer(1:nrow(feat.reg[[v]]), 1:nrow(feat.prot[[v]]), myf, col="mid")
+    myreg <- function(col)
+        matrix(feat.reg[[v]][[col]], nrow=nrow(O), ncol=ncol(O)) %>% as.vector()
+    myprot <- function(col)
+        matrix(feat.prot[[v]][[col]], ncol=nrow(O), nrow=ncol(O)) %>% t() %>% as.vector()
+    DATA[[v]] <- data.table(dist=as.numeric(O),
+                            REG=myreg("logFC.erna"),
+                            PROT=myprot("logFC.erna"),
+                            REG.fdr=myreg("FDR.erna"),
+                            PROT.fdr=myprot("FDR.erna"),
+                            REG.id=myreg("id"),
+                            PROT.id=myprot("id"),
+                            REG.start=myreg("start"),
+                            PROT.start=myprot("start"),
+                            REG.end=myreg("end"),
+                            PROT.end=myprot("end"),
+                            oeID=myreg("name"),
+                            chr=v)
+}
+DATA <- do.call("rbind",DATA)
+
+b2g <- get.b2gene()
+table(b2g$id %in% DATA$PROT.id)
+DATA <- merge(DATA, b2g[,.(id,baitID,gene)], by.x="PROT.id", by.y="id", allow.cartesian=TRUE)
+
+## add max interaction scores
+DATA <- merge(DATA,
+              ints[,.(baitID,oeID,Total_CD4_Activated,Total_CD4_NonActivated,Background)],
+              by.x=c("baitID","oeID"), by.y=c("baitID","oeID"), all.x=TRUE)
+setnames(DATA, c("Total_CD4_Activated","Total_CD4_NonActivated","Background"), c("act","non","back"))
+myf <- function(x) {
+    x <- max(x, na.rm=TRUE)
+    if(is.na(x))
+        return(0)
+    return(x)
+}
+with(DATA, tapply(dist, pmax(act,non,back)>5, summary))
+DATA <- DATA[dist<1e+7,]
+setkeyv(DATA, c("baitID","REG.id"))
+DATA[, c("act","non","back") := list(max(ifelse(is.na(act), 0, act), na.rm=TRUE),
+                                     max(ifelse(is.na(non), 0, non), na.rm=TRUE),
+                                     max(ifelse(is.na(back), 0, back), na.rm=TRUE)),
+     by=c("baitID","REG.id")]
+DATA <- unique(DATA, by=c("baitID","REG.id"))
+
+## group dist
+DATA[,cutdist:=droplevels(cut(dist,breaks=50,include.lowest=TRUE))]
+table(DATA$cutdist, DATA$non>5)
+with(DATA, table(cutdist, pmax(non,act,back)>5))
+
+if(!quick)
+    ggplot(DATA[act>5,], aes(x=REG,y=PROT)) + geom_point() + geom_hline(yintercept=0,col="grey") + geom_vline(xintercept=0,col="grey")
+
+## * Correlation between bait and prey
+myf <- NULL
+mycor <- function(x,y,use=rep(TRUE,length(x))) {
+    if(sum(use)>=3)
+        return( cor(x[use], y[use], use="pair") )
+    return(as.numeric(NA))
+}
+myf <- function(x) {
+    ss <- strsplit(gsub("\\[|\\(|\\]","",x, ","), ",")
+    ss <- lapply(ss, as.numeric)
+    sapply(ss, mean)
+}
+
+Dcor <- copy(DATA)
+Dcor <- Dcor[PROT.fdr<0.1,]
+Dcor[, all := mycor(PROT,REG), by="cutdist"]    
+Dcor[, act := mycor(PROT,REG,act>5), by="cutdist"]    
+Dcor[, non := mycor(PROT,REG,non>5), by="cutdist"]    
+Dcor[, back := mycor(PROT,REG, back>5), by="cutdist"]    
+Dcor <- unique(Dcor,by="cutdist")
+Dcor[,mid:=myf(cutdist)]
+Dcor[is.na(mid), mid:=1.3e+6]
+Dcor <- melt(Dcor, c("mid","cutdist"))
+Dcor <- Dcor[order(Dcor$mid),]
+if(!quick)
+    ggplot(Dcor,aes(x=mid,y=value,col=variable)) + geom_point() + geom_smooth() + xlim(0,2.0E+06)
+
+## * Categorise reg/prot pairs
+
+DATA[,int.cat:=paste0(ifelse(act>5 & non<5,"act",
+                      ifelse(act<5 & non>5, "non",
+                      ifelse(act>5 & non>5, "cd4",
+                      ifelse(back>5 & act<3 & non<3, "back", "--")))))]
+table(DATA$int.cat)
+with(unique(DATA,by=c("baitID","oeID")),table(int.cat))
+
+DATA[,enh.cat:=ifelse(REG.fdr>0.01,"invar",
+                      ifelse(REG>0,"up","down"))]
+with(unique(DATA,by="REG.id"),table(enh.cat))
+
+D <- DATA[REG.fdr<0.01 & PROT.fdr<0.01, ]
+#D <- DATA
+D[,cat:=int.cat]
+table(D$cat)
+D <- DATA[int.cat!="--",]
+save(D, file=file.path(CD4CHIC.DATA,"prot-reg-table-gb.RData"))
+
+D <- DATA#[REG.fdr<0.05, ]
+D[,cat:=int.cat]
+#D[, .( agree=sum(sign(REG)==sign(PROT))/.N ),
+#  by="cat"]
+
+
+source(file.path(CD4CHIC.ROOT, "activation-analyses/R/robust-models.R"))
+#ggplot(DATA[cat=="--",], aes(x=log10(dist),y=sign(REG)==sign(PROT),group=cat)) + geom_smooth() ## looks linear in log distance for dist <= 100,000bp
+
+D[,y:=sign(REG)==sign(PROT)]
+D[,mb:=log10(dist/1e+6)]
+D <- D[!is.na(y),]
+## linear
+
+## ggplot(D, aes(x=REG,y=PROT,col=dist)) +
+## geom_point() +
+## geom_density2d() +
+## geom_hline(yintercept=0) +
+## geom_vline(xintercept=0) +
+## facet_wrap(~cat)
+
+## ggplot(D, aes(x=log10(mb),ymin=REG,ymax=PROT,col=dist)) +
+## geom_linerange() +
+## geom_density2d() +
+## geom_hline(yintercept=0) +
+## geom_vline(xintercept=0) +
+## facet_wrap(~cat)
+
+D$cat <- factor(D$cat, levels=c("--","back","non","act","cd4"))
+mod <- model(PROT ~ mb*REG*cat, x=as.data.frame(D),do.print=FALSE)
+pmod <- modelprint(mod)  %>% as.data.frame()
+pmod$int <- sub(".*cat=","",rownames(pmod)) %>% factor(., levels=c("back","non","act","cd4"))
+pmod
+
+## logistic
+D[,mb2:=mb^2]
+D[,mb3:=mb^3]
+
+P <- vector("list",4)
+names(P) <- setdiff(D$cat,"--")
+for(l in names(P)) {
+    message(l)
+    D[,mb2:=ifelse(cat==l,mb,0)]
+    P[[l]] <- lmodel(y ~ mb + mb2, x=as.data.frame(D[cat %in% c("--",l),]))["mb2","P"]
+    m0 <- lm(y ~ mb,data=as.data.frame(D[cat %in% c("--",l),]))
+    m1 <- lm(y ~ mb*cat,data=as.data.frame(D[cat %in% c("--",l),]))
+    print(anova(m0,m1))
+}
+P
+
+#ggplot(D,aes(x=REG,y=PROT)) + geom_point() + geom_smooth() + facet_grid(cutdist ~ cat)
+
+mod <- lmodel(y ~ mb*cat, x=as.data.frame(D),do.print=FALSE)
+pmod <- modelprint(mod)  %>% as.data.frame()
+pmod$int <- sub("cat=","",rownames(pmod)) %>% factor(., levels=c("back","non","act","cd4"))
+pmod
+
+modelcmp(list(y ~ mb*cat, y ~ mb), x=D)
+
+pdata <- expand.grid(mb=seq(-2,0.5,0.1), cat=unique(D$cat)) %>% as.data.table()
+#pdata[,mb2:=mb^2]
+#pdata[,mb3:=mb^3]
+mm <- D[,.(min=min(mb),max=max(mb)),by="cat"]
+mn <- mm$min
+mx <- mm$max
+names(mn) <- mm$cat
+names(mx) <- mm$cat
+pdata <- pdata[mb >= mn[cat] & mb <= mx[cat], ]
+pr <- predict(mod, newdata=pdata, se.fit=TRUE)
+pdata$ypred <- pr$linear.predictors
+pdata$ylo <- pdata$ypred - 1.96 * pr$se.fit
+pdata$yhi <- pdata$ypred + 1.96 * pr$se.fit
+pdata <- split(as.data.table(pdata), pdata$cat)
+for(nm in rev(names(pdata))) {
+    pdata[[nm]] <- rbind(pdata[[nm]],pdata[["--"]])
+    pdata[[nm]][,cat2:=nm]
+}
+pdata <- do.call("rbind",pdata)
+pdata <- pdata[cat2!="--",]
+pdata[,cat2:=factor(cat2, levels=c("back","non","act","cd4"))]
+levels(pdata$cat2) <- c("control cells","CD4 lost","CD4 gained", "CD4 invariant")
+pdata[,cat:=ifelse(cat=="--","no","yes")]
+
+dP <- t(as.data.frame(P))
+colnames(dP) <- "P"
+dP <- as.data.frame(dP)
+dP$cat <- rownames(dP)
+dP <- as.data.table(dP)
+dP$P <- format.pval(dP$P)
+dP$P <- sub("9e-05","0.00009",dP$P); dP$P
+dP$P <- sub("0e.*","P<10^{-16}",dP$P)
+dP$P <- ifelse(grepl("<",dP$P),dP$P, paste0("'P='*'",dP$P,"'"))
+dP[,cat2:=factor(cat, levels=c("back","non","act","cd4"))]
+levels(dP$cat2) <- c("control cells","CD4 lost","CD4 gained", "CD4 invariant")
+
+cols <- c("grey40",scales:::hue_pal()(1))
+ggplot(pdata, aes(x=exp(mb),y=ypred)) +
+background_grid() +
+geom_ribbon(aes(ymin=ylo,ymax=yhi,fill=cat),alpha=0.1) +
+geom_path(aes(col=cat,fill=cat)) +
+facet_wrap(~cat2) +
+geom_text(aes(label=P),x=1.4,y=1.25,data=dP,parse=TRUE,size=4) +
+scale_x_continuous("Distance between eRNA and gene promoter (Mb)") +
+scale_y_continuous("log odds of agreement in fold change direction") +
+scale_colour_manual("PCHi-C interaction detected",labels=c("no","yes"),values=cols) +
+scale_fill_manual("PCHi-C interaction detected",labels=c("no","yes"),values=cols) +
+theme(legend.position="top")
+
+f <- file.path(CD4CHIC.OUT,"paper/figure-erna-prot-agreement.tiff")
+ggsave(f,height=4.5,width=6,units="in")
+ggsave(sub(".tiff",".pdf",f),height=4.5,width=6,units="in")
+system(paste("display",f))
+write.table(pmod,file=file.path(CD4CHIC.OUT,"paper/table-erna-prot-agreement.csv"))
+
+
+## * basic summary stats
+
+head(erna)
+head(ints)
+erna[,act:=name %in% ints[Total_CD4_Activated>5,][["oeID"]]]
+erna[,non:=name %in% ints[Total_CD4_NonActivated>5,][["oeID"]]]
+erna <- erna[pmax(erna.reads.act,erna.reads.non)>1,]
+cerna <- erna
+cerna[,c("act","non"):=list(any(act),any(non)),by="id"]
+cerna <- unique(cerna,by="id")
+with(cerna,ftable(diff=!is.na(logFC.erna),act,non,type=type))
+
+## expressed erna much more likely to overlap an interacting oe
+##                   type intergenic.reg lincRNA protein_coding pseudogene regulatory
+## diff  act   non                                                                   
+## FALSE FALSE FALSE                1147     577           1322       1721       5388
+##             TRUE                  134      42            136         69        706
+##       TRUE  FALSE                 129      47            167         66        642
+##             TRUE                  573     289           1149        304       4854
+## TRUE  FALSE FALSE                 264     232           2859        641       1835
+##             TRUE                   40      35            615         28        315
+##       TRUE  FALSE                  58      24            602         21        260
+##             TRUE                  278     209           7514        144       3083
+
+for(l in unique(erna$type)) {
+    tt <- with(erna[type==l,], table(int=act|non, diff=!is.na(logFC.erna)))
+    print(tt)
+    message(l,"\t", format.pval(chisq.test(tt)$p.value)) 
+}
+
+##        diff
+## int     FALSE  TRUE
+##   FALSE  8904  4104
+##   TRUE  14960 14021
+## regulatory	< 2.22e-16
+
+##        diff
+## int     FALSE TRUE
+##   FALSE  1647  542
+##   TRUE   1571 1126
+## intergenic.reg	< 2.22e-16
+
+##        diff
+## int      FALSE   TRUE
+##   FALSE  37377  34887
+##   TRUE   36355 192148
+## protein_coding	< 2.22e-16
+
+##        diff
+## int     FALSE TRUE
+##   FALSE  3720 2701
+##   TRUE   1216 1125
+## pseudogene	6.3899e-07
+
+##        diff
+## int     FALSE TRUE
+##   FALSE  4165 1659
+##   TRUE   3985 2122
+## lincRNA	2.3348e-13
+
+with(erna[type=="intergenic.reg" & FDR.erna<0.01,],
+     table(sign(logFC.erna)))
+table(DATA$cat)
+D <- DATA[cat!="--",]
+
+cat(sort(unique(D$gene)),sep="\n") # AHR, BACH2, BATF, 
+
+
+## * SKIP: for any other end, what is nearest bait (doing the skip 1 either side thing)?
+if(!exists("hind"))
+  hind <- get.hind()
+
+h <- as.data.table(as.data.frame(hind))
+h[,mid:=(start+end)/2]
+h[,name:=as.integer(name)]
+h <- h[order(seqnames,start),]
+
+## TODO: take account of overlaps when defining nearest - should be
+## nearest bait with non-overlapping feature
+feat <- copy(erna)
+feat[,c("minfrag","maxfrag"):=list(min(name),max(name)), by="id"]
+feat <- unique(feat[,.(id,chr,type,start,end,minfrag,maxfrag)],
+                by="id")
+setkey(feat,id)
+overlap <- function(id1,id2) {
+    o.length <- (feat[id1,start] < feat[id2,end]) &  (feat[id1,end] > feat[id1,start])
+    o.frag <- (feat[id1,minfrag] <= feat[id2,maxfrag]) & (feat[id1,maxfrag] >= feat[id1,minfrag])
+    o.length | o.frag
+}
+
+## only want frags with some regulatory/gene feature
+h <- h[ name %in% erna[!is.na(P.Value), name] ]
+
+## give each frag a number from 0, 1, 2, ... according to which bait
+## it comes at or after
+h[,nbait:=cumsum(bait=="bait")]
+## number of highest bait on left it could link to, with the +/- 1
+## hindIII frag blindspot
+
+h[,baitname:=ifelse(bait=="bait",name,NA)]
+baits <- h[bait=="bait",]
+setkey(baits,name)
+
+## TODO this should work but is long - should send off to the queue.
+save(h,baits,overlap,feat,file="~/scratch/erna-nearest-in.RData")
+
+qrun(file.path(CD4CHIC.ROOT,"activation-analyses/R/eRNA-nearest.R"),
+     "--args",
+     "direction=left",
+     time="20:00:00")
+
+qrun(file.path(CD4CHIC.ROOT,"activation-analyses/R/eRNA-nearest.R"),
+     "--args",
+     "direction=right",
+     time="20:00:00")
+
+## load
+load("~/scratch/erna-nearest-in.RData")
+load("~/scratch/erna-nearest-left-out.RData")
+h[,nearestBait.left := nearest]
+load("~/scratch/erna-nearest-right-out.RData")
+h[,nearestBait.right := nearest]
+
+h <- merge(h, baits[,.(name,mid)], by.x="nearestBait.left",by.y="name", suffixes=c("","Left"))
+h <- merge(h, baits[,.(name,mid)], by.x="nearestBait.right",by.y="name",suffixes=c("","Right"))
+
+
+## simple version
+## suboptimal because we find nearest and then drop those with overlaps
+
+## h[,nbait.left:=c(0,0,nbait[-c(.N,.N-1)])]
+## baits <- h[bait=="bait",]
+## setnames(baits,c("name","mid"),c("baitLeft","midLeft"))
+## h <- merge(h,baits[,.(nbait,baitLeft,midLeft)],by.x="nbait.left",by.y="nbait")
+
+## ## reverse ordering to do same from the right
+## h <- h[order(seqnames,start,decreasing=TRUE),]
+## h[,nbait:=cumsum(bait=="bait")]
+## h[,nbait.right:=c(0,0,nbait[-c(.N,.N-1)])]
+
+## setnames(baits,c("name","mid"),c("baitRight","midRight"))
+## h <- merge(h,baits[,.(nbait,baitRight,midRight)],by.x="nbait.right",by.y="nbait")
+## h <- h[order(seqnames,start),]
+
+## assign either nearest left or nearest right according to distance
+h[,nearestBait:= ifelse( abs(mid-midLeft) < abs(mid-midRight), nearestBait.left, nearestBait.right)]
+
+## viz
+ggplot(h, aes(x=abs(mid-midLeft))) + geom_histogram(fill="grey") + geom_density()
+          
+
+
+## use ints to add nearest CD4/Back linked bait
+m <- merge(ints[,.(id,baitID,baitChr,oeID,b2b,ngenesperbait,Total_CD4_Activated, Total_CD4_NonActivated, Background)],
+           h[,.(name,mid)],
+           by.x="baitID",by.y="name")
+m <- merge(m, h[,.(name,mid,nearestBait)],
+           by.x="oeID",by.y="name",suffixes=c("Bait","OE"))
+m <- merge(m,h[,.(name,mid)],
+           by.x="nearestBait",by.y="name")
+setnames(m,"mid","midNearestBait")
+
+## collect nearest bait or nearest linked bait for (overly?) fairest comparison
+## return absolute distance for above threshold interactions, or NA
+f <- function(v,d) {
+  ifelse(v>5, abs(d), NA)
+}
+m[, nearestACD4Bait:=baitID[which.min( f(Total_CD4_Activated, abs(midBait - midOE)) )], by="oeID"]
+m[, nearestNCD4Bait:=baitID[which.min( f(Total_CD4_NonActivated, abs(midBait - midOE)) )], by="oeID"]
+m[, nearestCD4Bait:=baitID[which.min( f(pmax(Total_CD4_Activated,Total_CD4_NonActivated),
+                                        abs(midBait - midOE)) )], by="oeID"]
+m[, nearestBackBait:=baitID[which.min( f(Background,abs(midBait - midOE)) )], by="oeID"]
+m <- unique(m[,.(oeID,nearestBait,nearestACD4Bait,nearestNCD4Bait,nearestCD4Bait,nearestBackBait)],
+            by="oeID")
+head(m)
+nrow(m)
+
+## add expr at nearest bait
+tmp <- erna[!is.na(P.Value),]
+nrow(tmp)
+length(unique(tmp$name))
+setnames(tmp,c("id","nfrag.erna","erna.reads.act","erna.reads.non","logFC.erna"),
+         c("id.erna","nfrag","reads.act","reads.non","logFC"))
+
+addm <- function(v) {
+  if(v=="oeID") {
+    tmp2 <- tmp[,.(name,id.erna,type,nfrag,reads.act,reads.non,logFC)]
+  } else {
+    tmp2 <- tmp[type=="protein_coding",.(name,id.erna,type,nfrag,reads.act,reads.non,logFC)]
+  }
+  nm <- names(tmp2)[-1]
+  setnames(tmp2, nm, paste(nm,v,sep="."))
+  m <- merge(m, tmp2, by.x=v, by.y="name", all.x=TRUE, allow.cartesian=TRUE)
+}
+for(v in names(m))
+  m <- addm(v)
+
+head(m)
+nrow(m)
+
+with(m,table(id.erna.oeID==id.erna.nearestACD4Bait))
+with(m,table(id.erna.oeID==id.erna.nearestBait))
+with(m,table(overlap(id.erna.oeID,id.erna.nearestACD4Bait)))
+with(m,table(overlap(id.erna.oeID,id.erna.nearestBait)))
+
+paircor <- function(v) {
+  vid <- paste("id.erna",v,sep=".")
+  tmp <- unique(m,by=c("id.erna.oeID",vid))
+  tmp <- tmp[ !overlap(id.erna.oeID,tmp[[vid]]) , ]
+  utype <- unique(tmp$type.oeID) %>% setdiff(.,NA) %>% sort()
+  vars <- c("reads.act","reads.non","logFC")
+  results <- matrix(NA,length(utype),length(vars),dimnames=list(type=utype,variable=vars))
+  for(it in utype) {
+    for(iv in vars) {
+      results[it,iv] <- cor(tmp[type.oeID==it,][[paste(iv,"oeID",sep=".")]],
+                            tmp[type.oeID==it,][[paste(iv,v,sep=".")]],
+                            use="pair")
+    }
+  }
+  results
+}
+
+classes <- c("nearestBait","nearestBackBait","nearestCD4Bait","nearestACD4Bait","nearestNCD4Bait")
+RESULTS <- lapply(classes, paircor)
+names(RESULTS) <- classes
+RESULTS
+
+library(reshape)
+mm <- melt(RESULTS)
+mm <- as.data.table(mm)
+mm[,mvalue:=mean(value),by=c("type","L1")]
+
+ggplot(mm,aes(x=L1,y=value)) + geom_point() + facet_grid(type ~ variable) +
+geom_hline(yintercept=0,linetype="dashed",col="grey") +
+theme(axis.text.x=element_text(angle=90))
+
+## get confidence intervals on these
+
+blockboot.dots<-function(data, cl, ordered=FALSE, block.size=50, B=200, quantiles=c(0.025,0.975),do.plot=TRUE) {
+    ## compute valid starting points for blocks
+  pl <- data
+  if(!ordered)
+    pl<-pl[order(name),]
+  obs <- with(data, eval(cl))
+  chrsplit <- split(1:nrow(pl),as.character(pl$Chr))
+  chrsplit <- chrsplit[ sapply(chrsplit,length)>=block.size ]
+  if(!length(chrsplit))
+    return(list(obs=obs,se=NA,ci.95=c(NA,NA),quantiles=rep(NA,length(quantiles))))
+  chr.idx<- lapply(chrsplit,function(i){
+    ret<-i[1:(length(i)-block.size)]
+    names(ret)<-NULL
+    ret
+  }) %>% unlist()
+  ## Efron reckons that n ~ l * k thus we want to select n/k blocks
+  sample.no<-ceiling(nrow(pl)/block.size)
+  ## bootstrap 200
+  boots<-mclapply(1:B,function(z){
+#    cat(".")
+    samp<-sample(chr.idx,sample.no,replace=TRUE)
+    idx<-lapply(samp,function(x){
+      seq(from=x,to=x+block.size,by=1)
+    }) %>% unlist()
+    with(pl[idx,], eval(cl))
+  },mc.cores=NCORES) %>% unlist()
+
+    if(do.plot) {
+        hist(boots); abline(v=obs,col="red")
+    }
+  se.hat <- sd(boots,na.rm=TRUE)
+  list(obs=obs,
+       se=se.hat,
+       ci.95=obs + c(-1,1) * se.hat,
+       quantiles=sapply(quantiles, function(q) quantile(boots,q,na.rm=TRUE)))
+}
+
+blockpaircor <- function(v,...) {
+  vid <- paste("id.erna",v,sep=".")
+  tmp <- unique(m,by=c("id.erna.oeID",vid))
+  tmp <- tmp[ !overlap(id.erna.oeID,tmp[[vid]]) , ]
+  utype <- unique(tmp$type.oeID) %>% setdiff(.,NA) %>% sort()
+  vars <- c("reads.act","reads.non","logFC")
+  results <- expand.grid(type=utype,variable=vars)
+  RESULTS <- vector("list",nrow(results))
+  tmp <- tmp[order(tmp$oeID),]
+  for(i in 1:nrow(results)) {
+    it <- results[i,"type"]
+    iv <- results[i,"variable"]
+    RESULTS[[i]] <- blockboot.dots(data=tmp[type.oeID==it,],
+                   cl=call("cor",
+                           as.symbol(paste(iv,"oeID",sep=".")),
+                           as.symbol(paste(iv,v,sep=".")),
+                           use="pair"),
+                   ordered=TRUE,
+                   ...,block.size=10) %>% unlist()
+  }
+  
+  results <- cbind(results,do.call("rbind",RESULTS))
+}
+
+m <- merge(m,unique(h[,.(name,seqnames)],by="name"),by.x="oeID",by.y="name")
+setnames(m,"seqnames","Chr")
+classes <- c("nearestBait","nearestBackBait","nearestCD4Bait","nearestACD4Bait","nearestNCD4Bait")
+feat[id %in% intergenic.ids, type:="intergenic.reg"]
+
+library(parallel); NCORES=1
+RESULTS <- lapply(classes, blockpaircor,B=50,do.plot=FALSE)
+names(RESULTS) <- classes
+RESULTS
+#save(m,classes,feat,file="~/scratch/eRNA-cor-ci-in.RData")
+
+for(nm in names(RESULTS)) {
+    RESULTS[[nm]]$class <- nm
+    names(RESULTS[[nm]]) <- names(RESULTS[[1]])
+}
+mm <- melt(RESULTS,colnames(RESULTS[[1]]))
+
+ggplot(mm,aes(x=class,y=obs,ymin=ci.951,ymax=ci.952)) +
+  geom_hline(yintercept=0,linetype="dashed") +
+  geom_pointrange() +
+  facet_grid(type ~ variable)  +
+  theme(axis.text.x=element_text(angle=90))
+
+ggplot(mm[mm$variable=="logFC",],aes(x=class,y=obs,ymin=ci.951,ymax=ci.952)) +
+  geom_hline(yintercept=0,linetype="dashed") +
+geom_hline(aes(yintercept=obs), data=subset(mm, variable=="logFC" & class=="nearestBait"),col="red") +
+geom_pointrange() +
+  facet_grid(type ~ variable)  +
+  theme(axis.text.x=element_text(angle=90))
+
+## how often is the nearestBait == nearest linked Bait?
+um <- unique(m,by="oeID")
+f <- function(tt)
+    c(tt, prop.TRUE=tt[["TRUE"]]/sum(tt))
+
+with(um[um$type.oeID=="regulatory",], table(nearestBackBait==nearestBait)) %>% f()
+with(um[um$type.oeID=="regulatory",], table(nearestBait==nearestCD4Bait)) %>% f()
+with(um[um$type.oeID=="regulatory",], table(nearestBait==nearestNCD4Bait)) %>% f()
+with(um[um$type.oeID=="regulatory",], table(nearestBait==nearestACD4Bait)) %>% f()
+with(um[um$type.oeID=="intergenic.reg",], table(nearestBackBait==nearestBait)) %>% f()
+with(um[um$type.oeID=="intergenic.reg",], table(nearestBait==nearestCD4Bait)) %>% f()
+with(um[um$type.oeID=="intergenic.reg",], table(nearestBait==nearestNCD4Bait)) %>% f()
+with(um[um$type.oeID=="intergenic.reg",], table(nearestBait==nearestACD4Bait)) %>% f()
+
+
+## ** look at distance profiles
+b2g[,id:=as.integer(id)]
+getdist <- function(oeids,baitids,lab) {
+    tmp <- data.table(oeID=oeids,baitID=baitids)
+    tmp <- unique(tmp,by=c("oeID","baitID"))
+    tmp <- merge(tmp,
+                 unique(b2g[,.(baitID,baitStart,baitEnd)], by="baitID"),
+                 by="baitID")
+    oe <- ints[,.(oeID,oeStart,oeLength)]
+    oe[,oeEnd:=oeStart+oeLength]
+    oe <- unique(oe,by="oeID")
+    tmp <- merge(tmp,oe[,.(oeID,oeStart,oeEnd)],by="oeID")
+    tmp[,d:=pmin( abs(oeStart-baitEnd),  abs(oeEnd-baitStart) )]
+    tmp <- tmp[,.(baitID,oeID,d)]
+    setnames(tmp,"d",paste0(lab,"Dist"))
+    tmp
+}
+for(v in c("nearestBack","nearestCD4","nearestNCD4","nearestACD4","nearest")) {
+    vb <- paste0(v,"Bait")
+    d <- getdist(m[["oeID"]], m[[vb]], v)
+    m <- merge(m,d,by.x=c("oeID",vb), by.y=c("oeID","baitID"))
+}
+
+
+
+
+ggplot(RESULTS,aes(x=type,y=obs,ymin=quantiles.2.5,ymax=quantiles.97.5)) +
+  geom_hline(yintercept=0,linetype="dashed") +
+  geom_pointrange() +
+  facet_grid(class ~ variable) 
+  
+
+m <- merge(ints[,.(id,baitID,baitChr,oeID,b2b,ngenesperbait,Total_CD4_Activated, Total_CD4_NonActivated, Background)],
+           expr[,.(id,baitID,gene,expr.reads.act,expr.reads.non, logFC.expr,FDR.expr)],
+           by=c("id","baitID"))
+m <- merge(m,
+           erna[,.(id,name,type,erna.reads.act,erna.reads.non, logFC.erna,FDR.erna,nfrag.erna)],
+           by.x="oeID", by.y="name",
+           suffixes=c(".expr",".erna"),
+           all.x=TRUE)
+setnames(m,"baitChr","Chr")
+
+
+setnames(h,"mid","midBait")
+m <- merge(m,h[,.(name,midBait)],by.x="baitID",by.y="name")
+setnames(h,"midBait","oeMid")
+m <- merge(m,h[,.(name,oeMid,baitLeft,midLeft,baitRight,midRight)],by.x="oeID",by.y="name")
+m[,mintobait:= pmin( abs(oeMid-midLeft), abs(oeMid-midRight) )]
+m[,nearestBait:= ifelse( abs(oeMid-midLeft) < abs(oeMid-midRight), baitLeft, baitRight)]
+m[,mintoBait:= pmin( abs(oeMid-midLeft), abs(oeMid-midRight) )]
+m[,CD4:=pmax(Total_CD4_Activated,Total_CD4_NonActivated)>5]
+m[,Back:=Background>5]
+m[,mintoCD4linkedbait:= min( ifelse(CD4,abs(oeMid-midBait),NA), na.rm=TRUE ), by="oeID"]
+m[,mintoBacklinkedbait:= min( ifelse(Back,abs(oeMid-midBait),NA), na.rm=TRUE ), by="oeID"]
+
+## add expr at nearestBait
+
+mu <- m[,max.logFC.expr:=logFC.expr[ which.max(abs(logFC.expr)) ], by=c("id.erna")]
+mu <- unique(mu,by="id.erna")
+mu[,mx.fac:=cutter(max.logFC.expr,4)]
+
+tmp <- melt(m[,.(id.erna,type,mintoBait,mintoCD4linkedbait,mintoBacklinkedbait)],
+            c("id.erna","type"))
+tmp[,medval:=median(value,na.rm=TRUE),by=c("variable","type")]
+
+ggplot(tmp,aes(x=value)) +
+  geom_histogram(aes(y=..density..),binwidth=0.1) +
+  geom_vline(aes(xintercept=medval),col="red") +
+  scale_x_log10(breaks=10^c(4:8), labels=c("10kb","100kb","1mb","10mb","100mb")) +
+  facet_grid(variable ~ type) +
+  ggtitle("distance to nearest bait") 
+
+unique(tmp[,.(type,variable,medval)],by=c("variable","type"))
+##               type          variable   medval
+##  1:     regulatory         mintobait  25592.0
+##  2: protein_coding         mintobait  23394.0
+##  3:        lincRNA         mintobait  41973.5
+##  4:     pseudogene         mintobait  26318.5
+##  5:     regulatory  minCD4linkedbait 143329.5
+##  6: protein_coding  minCD4linkedbait 154639.0
+##  7:        lincRNA  minCD4linkedbait 226012.5
+##  8:     pseudogene  minCD4linkedbait 161006.8
+##  9:     regulatory minBacklinkedbait 122849.5
+## 10: protein_coding minBacklinkedbait 139632.8
+## 11:        lincRNA minBacklinkedbait 207140.0
+## 12:     pseudogene minBacklinkedbait 167602.0
+
+tt <- with(unique(mu,by="id.erna"), table(mx.fac,cutter(logFC.erna)))
+tt
+chisq.test(tt)
+
+## first look
+
+## * JUNK: correlation at bait/oe
+
+cor.wt <- function( x, y, w = rep(1,length(x))) {
+  stopifnot( length(x) == dim(y)[2] )
+  use <- complete.cases(x,y,w)
+  if(!all(use)) {
+    w <- w[use]
+    x <- x[use]
+    y <- y[use]
+  }
+  w <- w / sum(w)
+  # Center x and y, using the weighted means
+  x <- x - sum(x*w)
+  y <- y - sum(y*w)
+  # Compute the variance
+  vx <- sum( w * x * x )
+  vy <- sum( w * y * y )
+  # Compute the covariance
+  vxy <- sum(y * x * w )
+  # Compute the correlation
+  vxy / sqrt(vx * vy)
+}
+
+
+lapply(unique(m$type), function(itype) {
+  message(itype, "\t",length(unique(m[type==itype,]$id.erna)))
+  with(m[type==itype,], cor.wt(logFC.expr, logFC.erna, 1/nfrag.erna)) %>% print()
+  with(m[type==itype,], cor.wt(log(1+erna.reads.act), log(1+expr.reads.act), 1/nfrag.erna)) %>% print()
+  with(m[type==itype,], cor.wt(log(1+erna.reads.non), log(1+expr.reads.non), 1/nfrag.erna)) %>% print()
+})
+
+## is this significant?
+m <- m[order(m$baitID,m$oeID),]
+
+
+use <- complete.cases(m[,.(logFC.expr, logFC.erna, erna.reads.act, expr.reads.act, erna.reads.non, expr.reads.non, nfrag.erna)])
+
+for(itype in setdiff(unique(m$type),"pseudogene")) {
+  use2 <- use & m$type==itype
+  message("\n\n",itype, "\t",length(unique(m[use2,]$id.erna)))
+  message("cor in log FC")
+  kk <- blockboot.dots(m[use2,], cor.wt(logFC.expr, logFC.erna, 1/nfrag.erna), ordered=TRUE)
+  kk[c(1,3)] %>% unlist() %>% print()
+  message("cor in log read count, activated")
+  kk <- blockboot.dots(m[use2,], cor.wt(log(1+erna.reads.act), log(1+expr.reads.act), 1/nfrag.erna), ordered=TRUE)
+  kk[c(1,3)] %>% unlist() %>% print()
+  message("cor in log read count, non-activated")
+  kk <- blockboot.dots(m[use2,], cor.wt(log(1+erna.reads.non), log(1+expr.reads.non), 1/nfrag.erna), ordered=TRUE)
+  kk[c(1,3)] %>% unlist() %>% print()
+}
+
+## lincRNA	128
+## cor in log FC
+##        obs     ci.951     ci.952 
+## 0.08589914 0.01707487 0.15472340 
+## cor in log read count, activated
+##         obs      ci.951      ci.952 
+##  0.03707513 -0.06624902  0.14039929 
+## cor in log read count, non-activated
+##         obs      ci.951      ci.952 
+##  0.03709720 -0.04569814  0.11989253 
+
+## regulatory	1460
+## cor in log FC
+##       obs    ci.951    ci.952 
+## 0.2899409 0.2639513 0.3159304 
+## cor in log read count, activated
+##        obs     ci.951     ci.952 
+## 0.09492111 0.07723658 0.11260564 
+## cor in log read count, non-activated
+##        obs     ci.951     ci.952 
+## 0.11634904 0.09331197 0.13938610 
+
+## protein_coding	8386
+## cor in log FC
+##       obs    ci.951    ci.952 
+## 0.1343149 0.1221225 0.1465073 
+## cor in log read count, activated
+##        obs     ci.951     ci.952 
+## 0.10751769 0.09817112 0.11686426 
+## cor in log read count, non-activated
+##        obs     ci.951     ci.952 
+## 0.09965681 0.09048747 0.10882615 
+
+## TODO: fake links (mirror on other side by number of genes)
+
+## TODO: profile of eRNA - linked bait distance
+
+## TODO: profile of eRNA - nearest bait distance
+
+## TODO: correlation at eRNA to nearest gene, perhaps just for those that are > 1 bait away?
+
+
+
+
+ggplot(m,aes(x=erna.reads.non,y=expr.reads.non)) + geom_point() + geom_smooth() + scale_y_log10() + scale_x_log10()
+ggplot(m,aes(x=erna.reads.act,y=expr.reads.act,col=1/nfrag.erna)) + geom_point() + geom_smooth() + scale_y_log10() + scale_x_log10()
+
+ggplot(m,aes(x=logFC.erna,y=logFC.expr)) + geom_point() + geom_smooth()
+
+

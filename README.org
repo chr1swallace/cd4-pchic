@@ -1,9 +1,15 @@
 * cd4-pchic
+** GUESSFM 
+Directory with own documentation, giving pipeline for GUESSFM fine mapping of autoimmune disease ImmunoChip data
 
-** Self contained scripts for figures and small analyses
-
+** ASE
+R scripts relating to ASE analysis
 - IL2RA-ASE.R :: create right hand panels on IL2RA ASE figure given supplementary data items
-- chepelev.R :: compare PCHi-C CD4 interactions to CHIA-PET interactions from Chepelev et al.
+- IL2RA-ASE+centralmem.R :: adding central memory results
+** analyses
+Other self contained scripts for figures and small analyses
+
+- chepelev-comparison.R :: compare PCHi-C CD4 interactions to CHIA-PET interactions from Chepelev et al.
 - make_modules.R :: cluster microarray data to find gene modules
 
 # Local Variables:

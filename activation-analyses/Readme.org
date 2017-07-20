@@ -1,0 +1,105 @@
+Contains code to carry out WGCNA analysis of X Castro CD4 microarray timecourse data, RNAseq at 4 hours activation, chromatin marks, PCHi-C.
+
+[[./R/common.R]] includes general functions.
+[[./R/collect-data.R]] loads and joins various sets of data
+
+* Prepare data 
+
+** Prepare expression data
+
+: Rscript R/wgcna_prepdata.R
+: Rscript R/eRNA_prepdata.R
+
+** Convert Roadmap wig.gz files to .bw
+
+#+BEGIN_SRC sh
+  mysql --user=genome --host=genome-mysql.cse.ucsc.edu -ANe \
+      "select chrom, size from hg19.chromInfo" > chrom.sizes
+  wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/wigToBigWig
+  chmod a+x wigToBigWig 
+  for f in `find /ipswich/data/chrisw/cd4chic/roadmapepigenomics | grep wig.gz`; do
+      echo $newf
+      newf=`echo $f | sed 's/.wig.gz$/.bw/'`
+      [[ -f $newf ]] || ./wigToBigWig $f chrom.sizes $newf
+  done
+#+END_SRC
+  
+** Prepare chromatin data
+
+: Rscript R/prepare_chromatin_marks.R
+
+Creates files under $CD4CHIC.OUT/chipseq:
+
+| differential marks raw | hind-diffmarks.RData        |
+| differential marks     | hind-diffmarks-binned.RData |
+| TE/SE from O'Shea      | hind-TE-SE.RData            |
+| binned marks           | hind-our-marks.RData        |
+| binned peaks           | hind-our-peaks.RData        |
+| chromhmm               | segments*.RData             |
+
+
+* QC
+
+** Limma comparison of RNA seq and microarry
+
+: Rscript -e "require(knitr)" -e "knitr::spin('R/limma_comparison.R',format='Rnw')"
+: mv limma_comparison.pdf $CD4CHIC_OUT/reports/
+
+For microarray, fold changes are nicely correlated (rho>0.9) comparing time x to time 0 or time x to paired, unstimulated time x.  However the significance of the fold change is not so good (rho=0.79 @ 6 hours, 0.63 @ 21 hours).
+
+RNA vs unpaired microarry at 4 hours is good.  There are several genes which have a strong, significant fold change in (unpaired) microarray @ 4 hours, but insufficient reads to estimate a change in RNA seq @ 4 hours.
+
+
+* Analyses
+
+** Make some gene expression modules
+
+: Rscript R/make_modules.R
+
+** Enrichment of Hallmark genes
+
+In order to characterise the modules generally, in terms of function,
+run enrichment analyses using the Hallmark genes
+
+: Rscript R/wgcna_enrichment.R
+
+** Compare and relate effects of activation on different aspects (expression, Hi-C, chromatin marks)
+
+General questions: 
+- does change in use of prey correspond to change in expression of genes associated with the bait end?
+- do chromatin marks at promoters/other ends change with activation?
+- do chromatin marks change with differential expression, differential contact?
+
+NB, use clustered robust variance estimates to try and adjust for the correlation
+
+: Rscript R/compare_multiple_things.R
+
+see output in [[./comparison.org]]
+
+** half-started things
+Examine in detail the expression profiles of cytokines upon activation.
+
+: R/cytokines.R
+
+Can we relate these to TFBS?
+
+: R/pwm.R
+
+
+* FINAL ANALYSES
+
+: Rscript R/analysis-for-paper.R
+: Rscript R/chepelev.R
+: Rscript R/chromatin-v2.R
+
+* FIGURES
+
+: Rscript R/figures.R
+
+| $CD4CHIC_OUT/paper/figure-modules.pdf | Plot of gene expression eigengenes by module |
+| $CD4CHIC_OUT/paper/figure-microarray-vs-rnaseq.pdf | Plot of gene expression eigengenes by module |
+
+
+- [ ] make tiffs as well, and write out underlying data
+- [X] this includes interaction vs expression - is this the latest or should it be deleted? KEEP
+
