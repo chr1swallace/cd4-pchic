@@ -17,7 +17,7 @@ x <- x[(A1+A2)>100,]
 w <- 10
 x[,stim:=factor(stim,levels=c("genomic","time0","non","act"))]
 levels(x$stim) <- c("genomic","time0","non-activated","activated")
-x$rev <- x$snp %in% c("rs12244380","rs61839660")
+x$rev <- !(x$snp %in% c("rs12244380","rs61839660"))
 x[,snp:=factor(snp,levels=c("rs61839660","rs12722495","rs12244380"))]
 levels(x$snp) <- c("rs61839660 (intron 1)","rs12722495 (intron 1)","rs12244380 (3' UTR)")
 library(RColorBrewer)
@@ -235,7 +235,7 @@ geom_point() +
 scale_y_log10("Allelic ratio (log scale)",breaks=c(0.6,0.8,1.0,1.2,1.4)) +
 geom_hline(aes(yintercept=mean.ratio.global),data=ux[stim=="genomic" & snp %in% snps[2:3],],
            col=cols[1],linetype="dashed") +
-scale_x_discrete("Condition") +
+scale_x_discrete("Condition",labels=c("not act'd", "act'd (4h)")) +
 theme(strip.background=element_blank()) +
 facet_grid(.~snp)
 

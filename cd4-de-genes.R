@@ -1,21 +1,30 @@
 ## DONE
 ## vasculitis, SLE https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-145
 ## Graves https://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-71957
-## RA https://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-20098
+## RA https://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-20098 https://www.ncbi.nlm.nih.gov/pubmed/22532634
 ## Multiple diseases (RNAseq) https://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-60424
 
 ## TODO
 ## SLE https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-2713/?query=cd4%20AND%20patients&sortby=assays&sortorder=descending
+
+## http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0140049 - cd - 15 vs 11, stim and non-stim - rnaseq
+
+## http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE13732 Longitudinal, 37 CIS (MS) vs 28 Controls - but naive CD4
+## http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE55447 Multiethnic SLE 21 african american,21 European american 5 AA controls and 5 EA controls.
+
+## http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE60236 - Interesting and potentially relevant to Burren et al. - I have a feeling we have discussed before - eqtl, not disease
+
+
 
 ## Jimmy's (UC, CRO)
 (load("~/scratch/cd4chic/jimmy-microarray.RData"))
 IBD.de <- results[[1]]
 
 library(ArrayExpress)
-a1 <- getAE("E-MEXP-145",type="processed",path="/scratch/cew54/cd4chic/disease-expr")
-a2 <- getAE("GSE71956",type="processed",path="/scratch/cew54/cd4chic/disease-expr")
-a3 <- getAE("E-GEOD-20098",type="processed",path="/scratch/cew54/cd4chic/disease-expr")
-a4 <- getAE("E-GEOD-60424",type="processed",path="/scratch/cew54/cd4chic/disease-expr")
+a1 <- getAE("E-MEXP-145",type="processed",path="~/scratch/cd4chic/disease-expr")
+a2 <- getAE("GSE71956",type="processed",path="~/scratch/cd4chic/disease-expr")
+a3 <- getAE("E-GEOD-20098",type="processed",path="~/scratch/cd4chic/disease-expr")
+a4 <- getAE("E-GEOD-60424",type="processed",path="~/scratch/cd4chic/disease-expr")
 
 reader <- function(a) {
     files <- grep("K3K",a$processedFiles,value=TRUE,invert=TRUE)
