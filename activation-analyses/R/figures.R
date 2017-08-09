@@ -269,12 +269,30 @@ theme(strip.text=element_text(size=12)) +
 labs(y="Log2 fold change",x="Gene module")
 p + background_grid()
 
-f <- file.path(CD4CHIC.OUT,"paper/violin-by-module.jpg")
+f <- file.path(CD4CHIC.OUT,"paper/violin-by-module2.jpg")
 jpeg(f,height=5,width=6,units="in",res=600)
 p + background_grid()
 dev.off()
 
 ## system(paste("display",f))
+
+## ** Dot plots
+Dm <- D[,.(y=median(y)),by=c("module","what")]
+Dm
+tt <- with(Dm,cor.test(y.expr,y.int))
+str(tt)
+Dm <- merge(Dm[what=="Differential expression",],Dm[what=="Differential interactions",],by=c("module"),suffixes=c(".expr",".int"))
+p2 <- ggplot(Dm,aes(x=y.expr,y=y.int)) + geom_point(aes(col=module),size=2) + geom_smooth(method="lm",se=FALSE,col="black") + colScale +
+draw_text(sprintf("rho=%2.1f p=%4.3f",tt$estimate,tt$p.value),x=1,y=-0.7) +
+labs(x="Median log2 fold change in expression",y="Median log2 fold change in interaction")
+
+
+f <- file.path(CD4CHIC.OUT,"paper/violin-by-module-spearman2.jpg")
+jpeg(f,height=5,width=6,units="in",res=600)
+p2 + background_grid()
+dev.off()
+#system(paste("display",f))
+
 
 ## ** Beeplots
 library(ggbeeswarm) # github.com/eclarke/ggbeeswarm
