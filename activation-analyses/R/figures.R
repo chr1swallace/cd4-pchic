@@ -269,7 +269,7 @@ theme(strip.text=element_text(size=12)) +
 labs(y="Log2 fold change",x="Gene module")
 p + background_grid()
 
-f <- file.path(CD4CHIC.OUT,"paper/violin-by-module2.jpg")
+f <- file.path(CD4CHIC.OUT,"paper2/violin-by-module2.jpg")
 jpeg(f,height=5,width=6,units="in",res=600)
 p + background_grid()
 dev.off()
@@ -285,9 +285,9 @@ Dm <- merge(Dm[what=="Differential expression",],Dm[what=="Differential interact
 p2 <- ggplot(Dm,aes(x=y.expr,y=y.int)) + geom_point(aes(col=module),size=2) + geom_smooth(method="lm",se=FALSE,col="black") + colScale +
 draw_text(sprintf("rho=%2.1f p=%4.3f",tt$estimate,tt$p.value),x=1,y=-0.7) +
 labs(x="Median log2 fold change in expression",y="Median log2 fold change in interaction")
+p2 + background_grid()
 
-
-f <- file.path(CD4CHIC.OUT,"paper/violin-by-module-spearman2.jpg")
+f <- file.path(CD4CHIC.OUT,"paper2/violin-by-module-spearman2.jpg")
 jpeg(f,height=5,width=6,units="in",res=600)
 p2 + background_grid()
 dev.off()
